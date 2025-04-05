@@ -1,11 +1,12 @@
 package com.ShoppingApp.InventoryService.Service;
 
+import com.ShoppingApp.InventoryService.DTO.InventoryResponseDto;
 import com.ShoppingApp.InventoryService.Entity.Inventory;
 import com.ShoppingApp.InventoryService.Repository.InventoryRepository;
-import jakarta.persistence.NoResultException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.NoSuchElementException;
 
 @Service
@@ -14,13 +15,16 @@ public class InventoryService {
 
     private final InventoryRepository inventoryRepository;
 
-    public boolean isInStock(String skuCode) {
+    public List<InventoryResponseDto> isInStock(List<String> skuCode) {
 
-        // find inventory by skuCode
-        Inventory inventory = inventoryRepository.findBySkuCode(skuCode).
-                orElseThrow(() -> new NoSuchElementException("SkuCode not found"));
-
-        // check if quantity is null and return false else true
-        return inventory.getQuantity() != 0;
+        // stream and map skucode in inventory to inventory response dto
+        // (create a logic for checking if the product is in stock)
+        return inventoryRepository.findBySkuCodeIn(skuCode).stream()
+                .map(inventory ->
+                    InventoryResponseDto.builder()
+                            .skuCode(inventory.getSkuCode())
+                            .isInStock(inventory.getQuantity() > 0)
+                            .build()
+                ).toList();
     }
 }
