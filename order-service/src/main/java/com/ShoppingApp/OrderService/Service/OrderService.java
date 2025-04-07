@@ -1,6 +1,5 @@
 package com.ShoppingApp.OrderService.Service;
 
-import com.ShoppingApp.OrderService.Config.WebClientConfig;
 import com.ShoppingApp.OrderService.DTO.InventoryResponseDto;
 import com.ShoppingApp.OrderService.DTO.OrderLineItemsDto;
 import com.ShoppingApp.OrderService.DTO.OrderRequest;
@@ -20,7 +19,7 @@ import java.util.UUID;
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final WebClient webClient;
+    private final WebClient.Builder webClientBuilder;
 
     public void placeOrder(OrderRequest orderRequest){
 
@@ -41,8 +40,8 @@ public class OrderService {
                 .map(orderLineItemsList -> orderLineItemsList.getSkuCode()).toList();
 
         // call the inventory service
-        InventoryResponseDto[] inventoryResponseArray = webClient.get()
-                .uri("http://localhost:5052/api/inventory",
+        InventoryResponseDto[] inventoryResponseArray = webClientBuilder.build().get()
+                .uri("http://InventoryService/api/inventory",
                         uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
                 .retrieve()
                 .bodyToMono(InventoryResponseDto[].class)      // we are retrieving the response as a single object(mono)
