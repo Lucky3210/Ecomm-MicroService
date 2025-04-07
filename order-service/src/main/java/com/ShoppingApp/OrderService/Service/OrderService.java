@@ -1,6 +1,7 @@
 package com.ShoppingApp.OrderService.Service;
 
 import com.ShoppingApp.OrderService.Config.WebClientConfig;
+import com.ShoppingApp.OrderService.DTO.InventoryResponseDto;
 import com.ShoppingApp.OrderService.DTO.OrderLineItemsDto;
 import com.ShoppingApp.OrderService.DTO.OrderRequest;
 import com.ShoppingApp.OrderService.Entity.Order;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,15 +36,23 @@ public class OrderService {
         // set order line items in order obj
         order.setOrderLineItemsList(orderLineItems);
 
+        // get all skuCodes from the order or orderRequest to be used by web client in the inventory service
+        List<String> skuCodes = order.getOrderLineItemsList().stream()
+                .map(orderLineItemsList -> orderLineItemsList.getSkuCode()).toList();
+
         // call the inventory service
-        Boolean inventoryResponse = webClient.get()
-                .uri("https://localhost:5052/api/inventory")
+        InventoryResponseDto[] inventoryResponseArray = webClient.get()
+                .uri("http://localhost:5052/api/inventory",
+                        uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
                 .retrieve()
-                .bodyToMono(Boolean.class)      // we are retrieving the response as a single object(mono)
+                .bodyToMono(InventoryResponseDto[].class)      // we are retrieving the response as a single object(mono)
                 .block();       // for synchronous communication(until we get a response then we are good to go)
 
+        // ensure that inventoryResponseArray has all isInStock  field for each item as true
+        boolean allProductsIsInStock = Arrays.stream(inventoryResponseArray).allMatch(InventoryResponseDto::isInStock);
+
         // logic for saving order based on inventory response
-        if (Boolean.TRUE.equals(inventoryResponse)) orderRepository.save(order);
+        if (Boolean.TRUE.equals(allProductsIsInStock)) orderRepository.save(order);
         else throw new IllegalArgumentException("Product not available");
 
     }
