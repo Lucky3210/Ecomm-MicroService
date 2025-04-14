@@ -1,0 +1,224 @@
+*** MICROSERVICE ARCHITECTURE ***
+
+--- Before microservice, the standard way of developing application was with a monolithic architecture, meaning that all the component of the application(the whole code) are part of a single unit, If we had an online sopping system, the user auth, product catalog, shopping cart, notification, sales component and payment would be in one codebase, everything is developed, deployed and scaled as one unit. This implies that the application must be written in one language, one tech stack, with a single runtime. Issues with this is that when a particular component/functionality fail, developers will have to rebuild, repackage and redeploy the whole code. 
+
+-- (HOW DO WE BREAK DOWN AN APPLICATION INTO MICROSERVICE???) It is most suitable to break down microservices base on business functionality rather than technical functionalities. There should be seperation of concerns(1 service for 1 specific job).
+
+--- MicroServices should be self contained and independent(meaning that each service must be able to be developed, deployed, and scaled seperately without any tight dependency on any other service even though they all part of the same application[this is called loose-coupling]). 
+--- Every service have their own version, and can be debugged, scaled and maintained independent of other service.
+
+--- Communication between microservices... since each service are built, developed and deployed seperately, there need to be a mode of communication between them. 
+>>> A very common way for this service to communicate is using API calls(each service has an enpoint for which it accept request from another service), service can communicate with each other by sending http request on this endpoint(This is called SYNCHRONOUS COMMUNICATION where one service sends a request to another service and WAITS for a response). 
+>>> Another common way of communication between service is using a MESSAGE BROKER(using an ASYNCHRONOUS COMMUNICATION, here the service will send a message first to the message broker for e.g rabbitMQ, and the broker will then forward the message to the destination service).
+>>> Lastly, another mode of communcation is using a SERVICE MESH(here we have a helper service which takes control over the communication logic so we don't have to code the communication service)
+
+-- API gateway handles incoming request and route them to their respective microservice.
+--- The API gateway rely on an identity provider service, to handle the authentication and authorization of each request coming through the API gateway.
+-- To locate a service to route an incoming request to, the API gateway consult a SERVICE REGISTRY and DISCOVERY SERVER.(microservice register with this service registry, and discover the location of other microservice through the discovery service).
+
+
+1 - ONLINE SHOPPING MICROSERVICE APPLICATION
+--- We will be building a simple online shopping application using the microservice architecture pattern using springboot and spring cloud technologies, covering the MS concept like service discovery, centralized configuration, distributed tracing, event driven architecture, centralized logging, circuit breaker, securing microservices using keycloak.
+
+--- Firstly, let examine a concept called spring cloud. SPRING CLOUD is another project like springboot, springsecurity, and spring framework generally used to build, manage, and attain a reliable and robust microservices. It covers some common set of design patterns which are implemented already such as the configuration management, circuit breakers, service discovery, intelligent routing etc. We are going to use spring cloud to mainly develop our microservices.
+
+:- Services we're going to build;
+--- The first service that we are going to build is the PRODUCT service, This service provides the API to create and view product inside our application(product catalog).
+--- Next, is the ORDER service where we can order available product.
+--- Next, we will create the INVENTORY service where the order service can verify if the product is in stock or not before order processing begins. 
+--- Lastly we will have a NOTIFICATION service where we will send an email notification after the order is being placed.
+
+--- For these four services we will have the ORDER service, INVENTORY service, and NOTIFICATION service talk to each other.
+--- The high level architecture will be in this wise..., the PRODUCT service will interact with the mongo db as a single service, we'll also have the ORDER service communicating with mysql db as a service, this ORDER service will interact with the INVENTORY and NOTIFICATION service(communication with the notification service will be through async comm. while that of the inventory service will be through sync comm(WAITS FOR A RESPONSE)) the INVENTORY service will communcate with mysql db, while the NOTIFICATION service will be a stateless service without any db.(its job is to send out notification to customers upon successful order) some tools such as kafka and rabbitMQ will be used for processing async commm(Message brokers).
+
+--- From the logical architecture of each service we have the CONTROLLER, SERVICE AND REPOSITORY layer for each of the services. At the CONTROLLER layer, we receive the http request from the client, from there the business logic are being executed in the SERVICE layer. In some services we're going to interact with some message queues, then the information is being stored in the db(that is the REPOSITORY layer)the repository layer talks to the db. This processes will be followed for all the services that is created.
+
+:- Product Service
+--- We bootsrap our application using our favorite website(minions), we have added few dependencies like the spring web, lombok, and mongodb(as stated earlier). We will be running our mongodb on a docker container and connecting it with out product service.
+>>> To run the mongo db on a docker container we first pull the image from docker hub with the command[docker pull mongo:latest], then we create a docker compose file and configure mongo db and mongo express(mongodb ui).  Afterwards we add the following to the app.prop file [spring.data.mongodb.uri=mongodb://localhost:27017/product-service?authSource=admin].
+
+--- Next we create our domain model(Product entity class), and to tell SB that it is mongodb Document we add the @Document(value="product") with the value connoting the document name, then we add other lombok annotations for constructors, getters and setters.
+--- Inside the class we will create the desired field which are id, product name, description and price. Then we add the @Id. 
+--- To store the id and make the data persistent we create a repository package and do the necessary(minions). Observe that here we are extending MongoRepository instead of JpaRepository becasue mongodb is a NoSQL db.
+--- We then create the controller package and the product controller, add the minions annotation and then we begin to create the handler method. First a method to create product, we add the @PostMapping and @ResponseStatus. This method will take in a product request dto as argument, and return void. Therefore we create a package called DTO and create a product request class(Since the DTO is a class, we are going to add the essential lombok annotations, if it was a record we wouldn't add it).
+--- The product request will have 3 fields as in product. Moving forward we have to create the logic that handles creating a product. So we create a service package and a product service class, we add the necessary minions and inject the necessary dependency like the product repo. Next we create a class called createProduct that takes in the product request, we need to map this dto to the actual product model before we save it to the database. We map the dto to the model and then save the product, then we add a log info from the @Slf4j annotation telling us that we have save a product[log.info("Product with id {} is saved", product.getId());].
+--- Next we want to call the create product service in the controller handler and that has been done easily.
+--- Next will create another endpoint to handle product retrieval(getProducts), with that we will create another dto(ProductResponse) which will be returned to the client. This method will return a List of ProductResponse but won't take in any argument, Next we will create the logic inside productService to get all the service. This method will use the findAll method to get the list of product, then we will map the list of product to the product response and return it as a list(we will stream the product, then use the map function to create a product response obj, and finally use the toList method)
+--- As the project grows we might always map the product list to a product response list, therefore a good design practice is to create a private method that maps the product list to product response and returns product response list, such that when we encounter another scenario we would just call the method.
+--- So far so real good, let's test the application. Issues arising from mongo db connectivity has been resolved, by creating a user and assigning the db name to that user and then updating the user in the docker compose file, after which we update the app.prop file
+	[docker exec -it mongodb mongosh "mongodb://source:source@localhost:27017/admin"] - login to mongo docker
+	[db.getUsers()] - get the list of users
+	[db.createUser({ user: "sourcec", pwd: "source", roles: [{role: "readWrite", db: "product-service"}]})] - creates new user and delegates the db to the new user created. Afterwards we edit the docker compose file and update the MONGO_INITDB_ROOT_USERNAME to the new user created, lastly we update the app.prop file.
+	[spring.data.mongodb.uri=mongodb://sourcec:source@127.0.0.1:27017/product-service?authSource=admin]
+	
+--- Testing the endpoint using postman and it all worked
+--- Next, we want to write some automated test for the application so that we don't necessarily have to be visiting postman.
+--- To do this we go to the test folder in the src directory, we will write the test in the main application test file. We will be writing INTEGRATION test and not Unit test. This test will spin up and load the whole application context and test for the POST and GET endpoints. Before we begin, we will install a library known as TESTCONTAINERS.
+-- Testcontainers is a java library that supports JUnit test, providing lightweight, throwaway instance of common databases, selenium web browsers and anything that can run on a docker container. With this we can use the docker container for Data access layer integration test(using mysql instance or any other dbms), application integration test(test with dependencies such as databases, message queues or web servers), UI/Accceptance test. It has much more modules for running test for our application.
+--- We want to do an integration test for mongodb, so we will go to the website [https://testcontainers.com/], and seach for mongodb database module. We will add the testcontainers dependency management dependency(To avoid specifying the version of each dependency, you can use a BOM or Bill Of Materials) to our pom xml, such that we can use any other testcontainer instance like kafka, mysql etc without explicitly stating the version. We paste the dependency above the build section, once this is done we can install the mongodb testcontainer dependency removing the version because the BOM already handle it for us. Since we will be using the JUnit file to write the test, we will need to add the junit file supporting module for testcontainers. So we go to the url[https://java.testcontainers.org/test_framework_integration/junit_5/] add locate the maven dependency and add to our pom xml. After adding this 2 dependencies we will go to the test main app file and start writing the integration test.
+--- First we will add the testcontainers annotation to the test class so that SB will know that we are going to use the testcontainer to write the test. Next we will define the mongodb container inside the test file [var mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:4.0.10"));], next we will add the @Container above this declaration so that Junit5 will know that it a container image, next we add the static keyword so that we can statically access the mongoDBContainer and fetch the url(we will need to set the uri of the container for our test properties).
+--- Next we will create a method called setProperties such that when the test begins, this method will load the container, and get the uri of the mongodb container(see test code).
+--- The first test would be to test for createProduct(the application should create product), and to make a http request such that when the endpoint is accessed it test for creation of product, we use the mockmvc library(to use it we will @AutoWired it into our test main file), we might want to the @AutoConfigureMockMvc to clear some errors.
+--- we will use the perform method in the mockMvc obj constructor, and pass in the request and endpoint we want to access[mockMvc.perform(MockMvcRequestBuilders.post("/api/product"));], still in this method, we set the contentType as JSON, also we set the content which is a sample of the product request as in dto(we create a private method and build the product request obj, then store the method in an object variable of type ProductRequest.), since the content (as in .content) takes in a string parameter and our content is in an obj type, we will use an object mapper to map the obj(such that it returns a string). To do this we define the ObjectMapper obj by using the @AutoWired and then call the writeValueAsString method and pass in the productRequest obj, now we can pass in the converted obj into the content. Next we want to ensure that we get a response of created as specified in the controller, by using the andExpect method.
+>>> Be sure to import ObjectMapper from the correct package(import com.fasterxml.jackson.databind.ObjectMapper;)
+--- To verify that the product was added to the db we can inject the productRepo and assert that size should be 1[Assertions.assertEquals(1, productRepository.findAll().size());]. Next I would personally write the test for the getProduct endpoint. So far so real good we implemented the get product test and we're just as good we should be.  
+
+Order Service
+--- For the order service, we have bootstrap our app on spring.io and added few dependencies like mysql, web, data jpa, next we group our microservices into a single folder and open on intellij.
+--- Next we will create our minions packages, for the model in this service, it role will be to store the orders, for that the order entity class will have the @Entity, next we will add the necessary annotations.
+--- We add the essential order attributes like the order number, orderline items(List of order line items, we will create an entity class of orderline items in the entity package and define the atributes such as price, quantiy, and skucode). There is a relationship between the order and the ordeline items already. A single order made, can have more than one order line items(I can order for more than one items in a single order placement), so we use the @OneToMany in the Order class for orderline items(@OneToMany(cascade = CascadeType.ALL), the cascade all means When you save/update/delete the parent entity, automatically do the same for all its child entities).
+--- Next we will create our order controller and add the necessary minions, for the handler method for placing an order, it will take in an obj of type OrderRequest(this is a dto that we will create in the dto package). The OrderRequest dto will have attribute List of OrderLineItems dto which we will also create in the dto class. The order line items dto will have similar properties to that of the order line item entity class. The method will simply return a string saying order placed successfully.
+--- Next we create a service to handle the order placement(creating the order and adding it into the db), this method will take in order request(dto) and return void. First we will create an instance of the order class, then set the order number to a random UUID string, and recall the orderRequest has a list of Orderline items dto, we will first map the orderline items dto to orderline items(we create function to do that since we would reuse the function), we would then use the function to map the orderline item dto to orderline items and then declare into a variable of type Orderline items List<>, now we can set the order to OrderLine items for database operations. 
+--- For the db ops, we create an order repo and inject the orderrepo into our service class and call the save method. Now we can go to our controller and call the orderservice.placeOrder method. We add the @PostMapping and @ResponseStatus(HttpStatus.CREATED) to the method..
+--- After all is done, remember your app.prop file and db config, then we run the application and our place order endpoint works just as it should.
+
+Inventory Service
+--- Before any order is placed we want to make sure the item(product) exist in the inventory. This is where the inventory service comes in.
+--- As we would always do, we bootstrap our application, and add the dependencies similar to that of order service. And then we will add similar mysql config in the app.prop file, 
+--- Next, we will create all packages needed and start with the inventory entity, then we add the required annotations and fields(id, skucode, quantity), next we will create the repo interface for inventory and do the minions. We would the create our controller class and define the minions we will use, and then we will create our handler method which takes in the skucode and return boolean if inventory with skucode passed in is present(we use the path variable since we are passing in skucode). We head over to the inventory service class and inject the inventory repo, add the @Service and create the method isInStock which takes in the skuCode and we use the findBySkuCode method which we will create in the repository interface, and then we call the .isPresent method. We will return this method directly as in (return inventoryRepository.findBySkuCode(skuCode).isPresent()), recall this isInStock method returns a boolean. Then we inject the minions and call the service method in the inventory controller class and pass in skuCode.
+--- Currently we don't have any inventory in the database, so we will populate the db on the application start up, by creating a bean and using the commanline runner tool.
+
+@Bean
+public CommandLineRunner loadData(InventoryRepo inventoryRepo){
+ return args -> {
+  Inventory samsung = new Inventory();
+  samsung.setSkuCode("Samsung");
+  samsung.setQuantity(100);
+  
+  Inventory iphone = new Inventory();
+  iphone.setSkuCode("Iphone")
+  samsung.setQuantity(0)
+  
+  inventoryRepo.save(samsung);
+  inventoryRepo.save(iphone);
+ }
+}
+-- we will set the spring.jpa.hibernate.ddl-auto to create-drop so that our data isn't duplicated multiple times in the db.
+
+--- We were able structure the 3 service into a maven project, and create a docker container for each database, and all the services are running, communicating with different database instance.
+>>> [docker stop playground-phpmyadmin2-1 playground-phpmyadmin1-1 playground-mysqldb2-1 playground-mysqldb-1 mongodb playground-mongo-express-1]
+
+
+InterService Communication
+--- After creating all the required service we need, each service exist independently with other service and this isn't suitable for a microservice arcitecture. One or more service should communicate with each other. As earlier said, this communication is of two forms(Synchronous and Asychronous comm). Whenever a user want to place and order, the ORDER service would have to communicate with the INVENTORY service to ensure that item is in stock. Here the order service will make an http request to the inventory and the inventory will return the status of the product. Base on this response, an order can be placed or an exception is thrown that the product is out of stock(SYNCHRONOUS). The synchronous comm is usually done through the HTTP CLIENT, there are two http client in SB (Http Web Client class and RestTemplate class). We will use Web Client because of stable version and support for synchronous, asynchronous, and streaming scenarios.
+
+-- gRPC (acronym for gRPC Remote Procedure Calls) is a cross-platform high-performance remote procedure call (RPC) framework that allows client and server applications to communicate transparently, as if they were running on the same machine.
+
+--- We go to our order service, and just before the order is added to the db([orderRepository.save(orderRequest]), we will call the inventory service and if inventory is in stock we will place order(save order to db), else we return out of stock.
+--- As said earlier, we will use the WebClient class so we create a new config package inside the order service module and a new class called web config. We will add the @Configuration minions to the class and for the method that we will create we will add the @Bean minions to the Method Object. The method will be of type WebClient(this web client is from the spring starter web flux dependency, so we add the dependency in our order service pom file) and now we can use the WebClient object(public WebClient webClient(){}) this method will return a web client obj, using the builder minions. To use this webClient bean(note that when we create a bean, the name of the bean will be the name of method with the bean annotaion. In this case, webClient) To use the WebClient bean we will inject into the orderService service class. Minions.
+--- Next, just above the order save method, we make a webclient.get() method(because the inventory controller to check for stock is a get method), we will pass in the url of the inventory method we are calling(in this case isInStock)... Visit code.
+--- We have define the request obj with web client and all the minions it uses to send a request to the inventory service, from the url of the inventory, it is observed that the inventory takes in skuCode as a url parameter(path variable), and now if we observe the order structure, each order request can have more than one orderline items(list of orderline items), which implies more than one skuCode(each orderline items must have skuCode), now if a genius makes an order for 20 items, should the order service make 20 request to the inventory endpoint???[NOOOO](Now imagine 50 genuises ordering 30 items each, and every item ordered is making a request to the inventory.... WOOOW). Therefore, in the orderService, we will get the skuCode from the orderRequest and dump it into a list, then we pass it(the list of skuCodes) into the request query parameter of the inventory endpoint, we will also adjust the inventory controller such that it takes in a list of skuCode instead of a single skuCode, and return the stock info. for each skuCodes. See code(we replace @PathVariable with @RequestParam, first because we are passing in a list, and for a better and readable url query parameter).
+--- For the inventory service class, since we are now passing in a list of skucode, we want to find by skucode in the db(findBySkuCodeIn), we create the method in the inventory repo interface(returns a list of inventory). The method in the service(inventoryRepository.findBySkuCodeIn(skuCode)) returns a list of inventory obj, we want to map each inventory obj to an inventory response dto. We create a dto package and then create the inventory response dto class(add the @minions), the class will have two field(skuCode and isInStock) see code(inventory service). Next we will update the return type, and go the inv controller and update the return type too to a return a list of inventory response dto. Now we will go to the order service and augment it. From the order that is being saved into the db, we will get the skuCodes(from orderline items object), we could get the skuCodes from the order or orderrequest dto[List<String> skuCodes = order.getOrderLineItemsList().stream()
+                .map(orderLineItemsList -> orderLineItemsList.getSkuCode()).toList();]
+                
+--- Next we want to include the skuCodes in the request parameter of the inventory service( we are doing this in in the order service ), we add it by introducing the uriBuilder method as second argument to the uri in the webclient obj(SEE CODE). WebClient will construct the request in the format(localhost:5052/api/inventory?skuCode=samsung&skuCode=iphone). From the inventory controller, the handler method is returning a List of inventory response(dto), and since we are accessing that endpoint using web client, we definitely will also return a List of inventory response dto(we don't have inventory response dto in our order service, so we copy the inventory response dto from the inventory service and paste in the dto in order service). Now we can adjust the bodyToMono to inventory response dto(an array because it is webflux) and also the return type of the webclient to an array of inventory response dto obj.   
+--- From the inventory response we get using the web client, we want to access the isInStock field and return true(SEE CODE).
+--- Everything worked just as good as it should. The order service can now communicate with the inventory before placing an order.
+
+
+Service Discovery
+--- We have been able establish a synchronous comm. with the order service and inventory service using the webclient class. 
+--- Just as good as it seems, it works locally but in a MS environment we will have this services deployed on a cloud env, and on a cloud env we can not have dedicated ip addresses, everything will be dynamic(ip). Also we can have multiple instances of the inventory service for instance(inventory service deployed on a cloud is given an ip, then we create more than one instance of the inventory service subnetting the ip(same network ip different host ip)). Here with this dynamic ip nature of the inventory, the order service will lose sight of which service to call. 
+--- We introduce a pattern called SERVICE DISCOVERY, this pattern is nothing but creating a server(discovery server) which will store all the info about the services(service name and service ip). When we are using a DS, our MS will first register to the DS on service boot(this will add the service info into the DS(called registry or service registry)). Once all this info is present, when our order service wants to call the inventory service it will first make a call to the DS asking where it can find the inventory service(OS be like, hey DS where can I find IS), then the DS will check its registry and return the information of the inventory service(ip). In this way we can avoid hardcoding the url of the inventory service as we did in the webclient in order service.
+--- One more thing to note is that when the order service makes a request to the DS, requesting for the inventory service, the response from the DS, is stored in a local registry of the client(order service) such that if for a minion reason the DS goes down and the order service makes a request, the request won't fail yet but rather the order service will check its local registry and try using the stored inventory service info. If the response from its local registry is null(no response), then the order service will terminate(saying that the inventory service is unavailable). Let's actualize this speakings.
+--- First we create a new module in our root maven project(we call the module discovery-server), this module is automatically added to the project pom xml. Next we want to add the necessary dependency for the discovery server which is called NETFLIX EUREKA(it is part of the spring cloud framework). We will go to spring.io, and add the dependency(eureka server) such that we can copy it from the pom xml or rather we can go to maven repo. After copying the dependency we will paste it in the DS pom xml file(the eureka server is coming from group id of spring framework .cloud, therefore we need to copy the dependency in the dependency management section of the spring.io pom file, we will then paste in the pom file of the root project under the dependency management section, and augment the spring cloud version). We can now create a package name(com.ShoppingMS.DiscoveryServer), then we create the main class file(DiscoverServerApplication) and then add the @SpringBootApplication minion and to make the module now a eureka server, in this main class we will add the @EnableEurekaServer minion. 
+--- In addition to the minion, we will create the app.prop file in the resources folder and add some config(SEE CODE).
+
+--- After the config, we run the DS and it runs perfectly. Now we need to register the client(services[inventory, order and product]) to the discovery server, first we will add the necessary dependency(oga copy the eureka server dependency from the DS and paste it in the services, then change the server to client) to each service pom file, then in the main file of the services we will add the @EnableEurekaClient minion(we added the @EnableDiscoveryClient since we are using spring 3.x and our cloud version is 2024.) and lastly we add some config to the app.prop file of the services(SEE CODE)
+-- If you’ve added the spring-cloud-starter-netflix-eureka-client dependency, and you’ve set eureka.client.register-with-eureka=true, your app will register with Eureka even without any annotation. Spring Boot 3.x + Spring Cloud 2022+ automatically registers Eureka clients without needing @EnableEurekaClient OR @EnableDiscoveryClient.
+-- ✅ You don’t need @EnableEurekaClient anymore.
+
+-- ✅ @EnableDiscoveryClient is fine (but even that is optional now).
+
+-- ✅ What matters is your Eureka dependency and config.
+--- We can now run all the service and the DS, we then go to the url of the DS(localhost:8761)(ensure that the service names are not UNKNOWN).
+--- As we stated earlier, we want to create multiple instance of the inventory service. To do this, we edit the app.prop file of IS and instead of running the service on port 5051, we will choose to run it on any port(in this case we set the server.port value to 0), next we will edit the inventory service configuration to allow parallel run(allow multiple instances), then we can run the IS and we will observe that the service used a different port. Progressing, we will change the hardcoded url in the order service class(webclient) to inventory service app name(in our case it will InventoryService)(check the app.prop file oh to confirm). 
+--- Now,,, if we run the services we should wait for the client to register themselves in the eureka server, then if we test the order service using postman, we get an error. Because from the theory we stated that, when we create multiple instance of the inventory service, the order service will have to go through the list of inventory instances from the first instance to the last, in that order MINIONS, therefore to debug this we have to configure the client load balancer. 
+--- We will go to the webclient config and adjust the Webclient bean in the config package of order service, by changing the return type to WebClient.Builder and add the @LoadBalanced minion to the bean(SEE CODE OHH), we will then adjust the changes in the OS service class and now we can run the service.
+
+
+API Gateway
+--- So far so real good we have built three services, establish a sync comm.  between two services, and then create a service registry where all service registers and are commuted via the discovery server. To access a particular service, we go directly to the endpoint and access it(e.g order service[localhost:5051/api/order] etc), while this is cool for a local dev. env. this pose security risk to the microservice and isn't suitable for a prod. env. Also, since a microservice can have multiple instances running concurrently, we cannot afford to have the endpoint of those instances expose to outside world.
+--- We introduce the concept of API gateway. which is responsible for routing request from user/client to the corresponding services. It acts like an entry point into the system landscape, if the user wants to call the product service, the user calls the API gateway, with the url(like onlineshop.com) and to be able to call the product service, it will be onlineshop.com/api/product.
+--- In our API gateay we can configure the rules such that if it recieves a request with /api/product then route it product service, similarly with /api/order then the request should be routed to the order service, and other service endpoint rules configuration. 
+-- The api gateway act as a gatekeeper to whatever request the user want to make to the services.
+
+--- The API gateway also address cross cutting concerns like routing based on request header as discuss earlier, authentication(if we want ensure authentication of all the request, we can configure that in the api gateway, the api gateway will interact with the authorization server configured whether it is the keycloak authentication server), Load balancer(the api gateway can also act as a load balancer, if we have multiple instance of the product service for instance, if the user makes a request to the product service, it will ensure it calls the less busy instance of the service and retrieve the response of that instance and sends it to the user), SSL termination(if we include the TLS/SSL scheme in our request to one of the service, since we don't need the https in the services as it is an internal comm., the api gateway will terminate the ssl in the incoming request. if we send a request to the order service via the API gateway using https://onlineshop.com/api/order, the api gateway will automatically terminate the ssl in https and route the request to the respective service.) 
+
+--- There are many types of API gateway like ApiGee, but we will make use of spring cloud gateway. We can visit the spring-cloud url to learn more about the spring cloud gateway. To get strarted we will go to the favorite website and get the dependency information(we copy the spring cloud routing dep.). next we create a new module in our maven project, and add the dep. to the pom xml file. 
+--- Next we will create a new package(com.ShoppingMS.ApiGateway) and create a class in the minion package(ApiGatewayApplication), then we add the @SpringBootApplication to the class and the main minions. Next we want to add a dep. for discovery client, since the api gateway is also a component inside the microservice landscape, therefore we copy the eureka client dep. from any of the service pom and paste in the api gateway pom, this automatically makes it a discovery client(or we can add the @EnableDiscoveryClient for best practice).
+--- Next, we will create the app.prop file and add the discovery server url so that it can register it self on start up. Some additional information will be added to prop file(SEE CODE). In the prop file we configure the logging of the API gateway such that we get full info on what is happening behind the scenes when a request is made. Also in the prop file we define the routes for the various services(SEE CODE oya, lb means loadbalancer(the api gateway will perform client side load balancing)). Specify the port 8080 in the prop file since it is the default gateway.
+-- On most Unix-based systems (Linux, macOS), only ports >= 1024 are allowed to be used by non-root users. Ports below 1024 are restricted.
+-- We can explore other routes predicates depending on the style of our api gateway(here we use the Path predicate[whereby if we have the defined path, then it should route the request to the respective service])
+-- For the pom xml in api gateway remove the -mvc in the dep., it will ruin you(when you try to access a service using the api gateway, it will return a 404 error).
+
+--- Up till this time, we have able to configure the api gateway and route all the request to the api endpoint. We want to route the eureka server to the api gateway, just like we did for the services. Let add the config in the api gateway prop(with this routing, we won't have to go to localhost:8761 to access the eureka server, but we can use the localhost:8080). After similar config like that of other services, when we run the api gateway, and access the url(localhost:8080/eureka/web), it throws a 503 error. This is because the API is trying to access the url(localhost:8761/eureka/web), and this endpoint is not available. 
+--- We want to make use of the routes filter such that when we access the endpoint(localhost:8080/eureka/web, it internally redirects us to localhost:8761). Using the filters, we can remove the url paramater and change the path of a request to /. Also, since we will only one instance of the discovery server, and there is no need for prepending the lb to the url, we change it to http to avoid the recurring error.
+--- While this works, it returns only plain html with no static resource, to return the full loaded styles and js, we create another route this time routing for the eureka static resource, the path predicate will be eureka/** but we won't add another filter.
+
+Security
+--- Its been a long way coming, we have been able to route all request to the api gateway, now we need to secure the gateway(we have all our treasures(services) in a single box(api gateway), we need a high end security to gaurd the treasures). 
+--- We will make use of authorization server called KEYCLOAK, using keycloak we can outsource our authentication and authorization config and we won't need to implement the auth mechanism by hand in our MS. To start we will go to keycloak website and navigate to guides, then we will select the docker image and run it. Before we run, we will ensure that we change the port to a different port since our api gateway is using port 8080
+	[docker run -p 8181:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:22.0.0 start-dev] 
+	
+--- The realm in keycloak is where we can group our application, clients to a single logical entity, keycloak automatically create a master realm so we create ours for managing our client, roles and application. We make few configurations like enabling client configuration, disabling standard flow and direct access grant, and enabling service account roles(it will enable the client credentials grant) then we save the client, after saving it we create a client secret which we can view by going to the credentials section. We can copy the client secret and use it for authentication whenever we want to. We have to provide the url of keycloak in our api gateway, so we go to realm settings and click on OpenID Endpoint Configuration, then we copy the url in the issuer field(in our case "http://localhost:8181/realms/ShoppingMS"), we will paste it in the api gateway because we have to configure the gateway to communicate with the keycloak server.
+--- In the pom xml of our api gateway we will add the oauth2-resource-server dependency, and spring security dependency. Once the dep. has been downloaded, we are set to configure the issuer uri in the api gateway. As said earlier, we will paste into the app.prop file of our api gateway. SB at start up will go the uri endpoint and read the document, thereby fetching all the resource/endpoint needed for authorization. SB will make a call to all the related resource/endpoint to ensure the token is valid. 
+--- Instead of configuring all the authorization urls we simply configure the issuer uri as an entrypoint, and SB will do the openID config and get all resources needed. 
+--- Next, we will create a security config package and a sec. config class inside our api gateway, we will add the @Configuration minion, @EnableWebFluxSecurity(we didn't use the @EnableWebSecurity this is because spring cloud api gatewaay as in our pom xml is built on spring webflux project not spring web mvc). We will create a bean, returning SecurityWebFilterChain as we did in other sec. config, but this will take in ServerHttpSecurity and we will configure webflux sec. details(RUN TO CODE now oh).
+-- DSL refers to Domain-Specific Languages, which are specialized programming languages designed for particular tasks or domains. Spring utilizes DSLs in various areas, such as Spring Integration and Spring Security, to provide more readable and maintainable configurations.
+
+--- After configuring the sec. we test it our in postman, and just as expeceted we see a 401 unauthorized error. To configure the sec. on postman we select authorization and look for oauth2.0 and select it. We will make the necessary confifurations like setting the token name, grant type as client credentials(because we want to have a machine to machine communication), setting access token url to the token_endpoint url value(from the openID endpoint config where we got the issuer url), client id will be the client we created in the realm we created, and set the scope to openID offline_access.
+--- Next we click generate token and it say authorization complete, we have a window which displays our access token and other minoins. We will click on use token, and the token will be added to postman such that when we send a request to the api gateway or any other service, it will use the token to authenticate the request. It returns success 200.
+--- Now when we try to access eureka on the web, it worked because recall in the sec. config for api gateway we configured the sec. filter chain to permit request from /eureka/**. Here is the bug, we have some treasure boxes(services) inside a building(api gateway), we invested in securing that building such that no one can break inside, But the treasure boxes(service) inside the building are left open and without any lock. Inasmuch as the boxes(services) are in a secure room, it needs to be secured too. So we can configure a basic security for each services and set their username and password such that if a kiddie breaks in(api gateway breach), the treasures(services) are still secured till the goodman(admin) comes and kicks them out.
+--- In the api gateway app.prop, the uri route config will be such...
+	spring.cloud.gateway.routes[2].uri=lb://<username>:<passowrd>@InventoryService
+--- The InventoryService name can be any service okayyy.(configuring a basic sec. for the services means adding spring starter sec. dep., creating a sec. package and class, extending the sec. class from WebSecurityConfigurerAdapterm and overiding the configure method for AuthenticationManagerBuilder and HttpSecurity(polymorphism))
+ 
+
+-- Open the openID endpoint config on terminal
+	 curl -X GET "http://localhost:8181/realms/ShoppingMS/.well-known/openid-configuration"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MAIL_USERNAME=rccghopefab@gmail.com
+MAIL_APP_PASSWORD=whkeqarvjspxpzny
+
+
+
+
+-- I didn't add the following eureka.client.register-with-eureka=true to my service properties yet, it was registered to the discovery server
+-- Difference between MongoRepository and JpaRepository 
+
+MAIL_APP_PASSWORD=ywyfowfnvkilwcpr 
+hotmail key- 598QX-4CJHQ-HWKZY-L2ZH5-6MPPM
+
+MAIL_USERNAME=rccghopmedia@hotmail.com
+MAIL_APP_PASSWORD=phwxrawatmucgwts
