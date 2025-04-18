@@ -178,9 +178,23 @@ Security
 -- Open the openID endpoint config on terminal
 	 curl -X GET "http://localhost:8181/realms/ShoppingMS/.well-known/openid-configuration"
 
+-- Get open port and kill them if needed
+	sudo ss -tulnp 'sport = :8080'
+	sudo kill -9 <PID>
 
+Resilience4J Circuit Breakers
+--- What it feels like to feel good... 
+--- We've examine how to configure the security in our api gateway and also our micro services.
+--- Here we will explore an exciting concept in the microservice landscape called circuit breakers. They are used when we want to have resilient communication between our services. Recall we have established a synch. comm. between the order service and the inventory service(for every order that is placed, we check if the item is in stock and process the order or decline it). With this direct comm., what if the inventory service is down, and from the discovery server we can't get first hand details on the item. Another hassle we face with this direct comm. is the latency in response from the inventory to the order service either due to perfomance or database.
+--- When we face this kinds of problems, we have to make sure our system is resilient. We don't want to the request to terminate abruptly.
+--- The circuit breaker pattern is simply a set of state which we maintain in the application.
+>>> [By default, if the service or application is working as designed and without any error, it takes on a CLOSED state. If we encounter an issue, maybe delayed response, downtime etc, the circuit breaker will assume a state of OPEN(from our service example, if the inventory service fail, it is not convenient for the order service to keep calling the inventory service hoping it will respond. Instead it changes it states to OPEN and a certain duration is set whereby at the expiration of that time, it will retry sending request). After a certain duration, the status of the circuit breaker changes to HALF OPEN(meaning that it will start sending request to the inventory service, and if the request are still not returning a valid response it will change it state back to OPEN(while the state of a circuit breaker is OPEN, a fallback logic is executed)), and if the request returns a valid response then it will change the state back to CLOSED].
 
+--- We won't have to write the code for building a circuit breaker, SB provides us a circuit breaker library which will be useful called Resilience 4J.
+--- Resilience4J is a lightweight easy-to-use fault tolerance library, we will make use of spring cloud circuit breaker which can have many implementation such as netflix hystrix, resilience4J, sentinel, spring retry. We will be using resilience4j.
+--- We will add the circuit breakers at major service in the comm. stream(the order service in sync comm. with the inventory service). With this we will open the pom xml of the order service and add the dependency for spring cloud circuit breakers resilience4j, and the dep. for spring actuator(this dep. is from the group id of springframework.boot). Once these two dep. have been added and loaded to maven project, we can configure the resilience4j in our app.prop file.
 
+--- First, we want to enable actuators, which we can use to track the metrics of our app like the health, status, beans, loaded context, etc.(RUN TO CODE(app.prop for order service) NOW)  
 
 
 
