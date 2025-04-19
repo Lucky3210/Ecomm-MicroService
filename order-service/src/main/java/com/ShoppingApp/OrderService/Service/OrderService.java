@@ -21,7 +21,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final WebClient.Builder webClientBuilder;
 
-    public void placeOrder(OrderRequest orderRequest){
+    public String placeOrder(OrderRequest orderRequest){
 
         Order order = new Order();
         // set order number
@@ -51,7 +51,10 @@ public class OrderService {
         boolean allProductsIsInStock = Arrays.stream(inventoryResponseArray).allMatch(InventoryResponseDto::isInStock);
 
         // logic for saving order based on inventory response
-        if (Boolean.TRUE.equals(allProductsIsInStock)) orderRepository.save(order);
+        if (Boolean.TRUE.equals(allProductsIsInStock)) {
+            orderRepository.save(order);
+            return "Order placed Successfully";
+        }
         else throw new IllegalArgumentException("Product not available");
 
     }
