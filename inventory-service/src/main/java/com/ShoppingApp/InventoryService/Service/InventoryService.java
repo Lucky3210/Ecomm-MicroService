@@ -3,6 +3,7 @@ package com.ShoppingApp.InventoryService.Service;
 import com.ShoppingApp.InventoryService.DTO.InventoryResponseDto;
 import com.ShoppingApp.InventoryService.Entity.Inventory;
 import com.ShoppingApp.InventoryService.Repository.InventoryRepository;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,12 +18,18 @@ public class InventoryService {
 
     private final InventoryRepository inventoryRepository;
 
+    @Observed(
+            name = "user.name",
+            lowCardinalityKeyValues = {
+                    "userType", "userType2"
+            }
+    )
     public List<InventoryResponseDto> isInStock(List<String> skuCode) throws InterruptedException {
 
         // Delay simulation
-        log.info("Delay Start...");
+        /*log.info("Delay Start...");
         Thread.sleep(10000);
-        log.info("Delay End...");
+        log.info("Delay End..."); */
 
         // stream and map skucode in inventory to inventory response dto
         // (create a logic for checking if the product is in stock)

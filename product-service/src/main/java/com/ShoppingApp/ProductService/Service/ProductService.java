@@ -4,6 +4,7 @@ import com.ShoppingApp.ProductService.DTO.ProductRequest;
 import com.ShoppingApp.ProductService.DTO.ProductResponse;
 import com.ShoppingApp.ProductService.Model.Product;
 import com.ShoppingApp.ProductService.Repository.ProductRepository;
+import io.micrometer.observation.annotation.Observed;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +34,12 @@ public class ProductService {
         log.info("Product with id {} is saved", product.getId());
     }
 
+    @Observed(
+            name = "user.name",
+            lowCardinalityKeyValues = {
+                    "userType", "userType2"
+            }
+    )
     public List<ProductResponse> getAllProducts(){
 
         // findAll return list of Product, but we want to return ProductResponse
