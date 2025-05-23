@@ -1,4 +1,4 @@
-package com.ShoppingApp.OrderService.Event;
+package com.ShoppingApp.NotificationService;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -278,12 +278,43 @@ Further read: https://www.baeldung.com/spring-boot-3-observability
 --- Pertually configuring keycloak security in order to get the client secret was a fun adventure, because now I can just run through it and fuiiuun😂 I'm done and good to go. 
 --- Distributed tracing is very essential in dubugging and troubleshooting code in production, we can therefore measure the internal state of the application, helping us locate the point of failure. We will explore Jaeger just when the time is right for it.
 
+
 Event-Driven Architecture using KAFKA
 --- Its been a long way coming🤕, what it feels like to feel good😁. Now trust me there is a gap with the whole micro service. We make a request from the order service to the inventory and base on the response from the inventory service, we can then place an order or return a fallback logic(SYNCHRONOUS COMM.), Another mode of communication as we stated earlier known as the ASYNCHRONOUS COMM., here we don't have to wait for a response and to implement this kind of communication, we make use of the EVENT-DRIVEN ARCHITECTURE(this is simply performing asynchronous comm. with the form of events).
---- Whenever we place an order(triggering the order service) and the order is placed succesfully, our OS will raise an event(like an "order placed" event) and we can use this "order placed" event object as a message inside the kafka broker, and our NOTIFICATION SERVICE which is the consumer will consume this message accordingly and ORDER SERVICE a producer of the message(This can be implemented in the form email notification, etc).
---- There was no other time to begin like now,,, we will start by installing kafka on our machine (developer.confluent.io/quickstart/kafka-docker/), we will use the docker image.. so cool. Once we open the link the, below we will find a docker compose code, we will copy the code and then create a file name docker-compose.yml in our root folder or elsewhere and then we paste in the code into the file.
+--- Whenever we place an order(triggering the order service) and the order is placed succesfully, our OS will raise an event(like an "order placed" event) and we can use this "order placed" event object as a message inside the kafka broker(a distributed, scalable, elastic, and fault-tolerant event-streaming platform.), and our NOTIFICATION SERVICE which is the consumer will consume this message accordingly and ORDER SERVICE a producer of the message(This can be implemented in the form email notification, etc).
+--- There was no other time to begin like now,,, we will start by installing kafka on our machine (https://developer.confluent.io/confluent-tutorials/kafka-on-docker/), we will use the docker image.. so cool. Once we open the link the, below we will find a docker compose code, we will copy the code and then create a file name docker-compose.yml in our root folder or elsewhere and then we paste in the code into the file.
 -- Zookeeper is used to orchestrate the kafka clusters
 
+-- At the heart of Kafka is the log, which is simply a file where records are appended. The log is immutable, but you usually can't store an infinite amount of data, so you can configure how long your records live.
+-- The storage layer for Kafka is called a broker, and the log resides on the broker's filesystem. A topic is simply a logical construct that names the log—it's effectively a directory within the broker's filesystem.
+
+--- The zookeeper wasn't needed anymore, we successfully pulled the image, downloaded it, and run it[docker logs broker]. Now we can go ahead of ourself anf configure kafka in our micrservice, we will use a project called spring kafka( It provides a "template" as a high-level abstraction for sending messages ). Spring-kafka has many integrated features that we will make use of, such as the @KafkaListener, @KafkaTemplates etc with the objective of attaining an async comm. between our order service and notification service.
+--- We paste the dependency below into the pom xml in our order service.
+<dependency>
+  <groupId>org.springframework.kafka</groupId>
+  <artifactId>spring-kafka</artifactId>
+  <version>3.3.6</version>
+</dependency>  
+
+--- We exclude the version, so that it uses the version from the parent pom. MIIIINNIIIONS, next we will configure our order service to listen to the kafka broker which is runnning on our machine(docker). To do this we open the app.prop of our order service and add few properties(YOU MIGHT WANT TO SEE THE CODE), the bootstrap-server properties simply configures kafka to our project since it is running on a container. Next we will go the service class in Order service to make a call to the kafka clusters whenever the order is placed. To do this we inject the kafka template class into the service class, and just below we save the order to the db(orderRepository.save(order)), we will make few config(SEE CODE SOFT) we use the kafkaTemplate.send() method which has two argument(topic and object data), the object data in our case is the order number(we want to send out the order number as a message to the queue so that in the NS we will know the order number which was created) but we won't pass in ordernumber(as in order.getOrderNumber()), instead we will create a new class(like a dto, oh dear) this class will be an order place event and then we will send out this object as a json message.
+--- To implement the above state, we will create a new package called Event and inside the package we create a new class called OrderPlacedEvent, and this will be POJO(Plain Old Java Object) class, it will contain just a single field(orderNumber). So now back to our OS service class, where we are supposed to input the orderNumber we will input an instance of the OrderPlacedEvent class and pass in order number. 
+	(new OrderPlacedEvent(order.getOrderNumber()).
+--- Now kafka will send the orderplacedevent object above to the notification topic(one of the argument in the kafkaTemplate.send() method). Recall we exmine what a topic is...MINION.
+--- In the injection, we get a warning from kafka because from kafkaTemplate source file, kafkaTemplate takes in two arguments(key and a value), here our key will be a String because our topic(send() method) is of type String and the next argument(value), will be an object(OrderPlacedEvent) because the second argument of our send() is an object of same type. Also we can also define the topic(in our case "notificationTopic" as the default topic, if we want to send multiple messages to kafka instead of typing the notificationTopic for every message we can set it as the default topic template), we make the config in our prop file(SEE IT NOW). Next, we want to provide an info to our project on how to serialize these key and value pair, we have set the String serializer(SEE IT), Also for the value, we want to serialize or convert the java object into a JSON so we define the properties too(SEE PROP FILE).
+--- Now we are done with the producer service, we will now create the consumer service(NOTIFICATION SERVICE) and configure it with kafka. We go ahead of ourself to our fav website and get few dependencies for the NS, then we create a new module as we did for other services... then we add the dependencies we copied from the explore section(SEE NS POM). Next we create the package in the Java folder, and the main class file(SEE NS Filesystem).
+--- After creating the main class file, we want to define the kafka listener inside the class file(SEE NS MAIN FILE), the kafka listener is set to the notificationTopic and the method will take in OrderPlacedEvent object(but the class isn't present in our Notification service, hence we create the file(a duplicate of what we have in the Event package in order service)), we can implement the email notification service, but for simplicity we will log the notification message showing that we received the notification message. Done with the simple function, we will add the necessary dep. like the eureka, micrometer, basically for distributed tracing and discovery client. Then we can make few config in the app.prop file(NS), the kafka config made in the app.prop will be same but difference in the fact that while the OS is a producer, the NS is a consumer. Also while the OS was serializing the kafkaTemplate, the NS will be deserializing it.
+--- It's not yet doneee.. OMG. the mode of serialization and deserialization is done on two seperate package name, and this will cause conflict because kafka springboot won't know how to map both object of OrderPlacedEvent considering their distinct package names(hence we add one more properties for json tye mapping, in both the Order Service and NS app.prop files).
+
+-- Fully Qualified Classname(FQC) - The class name with the package inclusive[com.ShoopingApp.package.Classname] 
+--- The mapping in the app.prop will have their respective FQC.
+--- To avoid minion errors, we add the groupId in the app.prop of the NS.
+
+--- Soft thing iniit😇, we have been able to implement the notification service with the use of spring kafka to stream the notification upon successful order placed.. The process is quite a simple one, in the main method of the NS where we implemented handler method, we can write a private function for mail sending and then call the method in the notification handler Minion. We also observed the request using the ZIPKIN minion as perused in the prologue section.
+
+
+DOCKERIZING THE PROJECT
+--- It feels better to feel great☺️, it is safe to say that we are done with the project... hmm well you're right but not right, because there is room for evolution.
+--- We want to dockerize all the services(PS, IS, OS, NS, DS, APIGATEWAY) such that the we no longer run the application locally on our device, but instead run it directly on a docker container(using docker compose). First, we might want to install docker desktop but we rather use the CLI, next we would go ahead and register an account on docker hub.
 
 
 
@@ -308,9 +339,30 @@ Event-Driven Architecture using KAFKA
 
 
 
+-:::::::::::::NOTE-WORTHY::::::::::::::::-
+Low vs High Cardinality in Observability
+Cardinality refers to the number of unique values a metric tag/label can have. This is crucial for observability because it directly impacts storage, performance, and costs.
+Low Cardinality Keys
+These have a limited, bounded set of possible values:
 
+http.method → GET, POST, PUT, DELETE (maybe 10 values max)
+service.name → user-service, order-service, payment-service
+environment → dev, staging, prod
+region → us-east-1, us-west-2, eu-central-1
+status.code → 200, 404, 500, etc.
 
+High Cardinality Keys
+These have many unique values, often unbounded:
 
+user.id → could be millions of unique users
+request.id → UUID for each request
+sql.query → each query might be slightly different
+file.path → thousands of different file paths
+email.address → every user's email
+
+Why Cardinality Matters
+Storage explosion: If you have 3 low-cardinality tags with 10 values each, you get 10×10×10 = 1,000 metric series. Add one high-cardinality tag with 100,000 values and you get 1 billion series.
+Performance impact: High cardinality can overwhelm monitoring systems, slow down queries, and increase costs dramatically.
 
 
 
